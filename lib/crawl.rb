@@ -12,28 +12,56 @@ class Crawler
 
   def find_suites(job)
     visit "/job/#{job}/"
-    p page.find("#matrix").all("a")
+    suites = []
+    page.find("#matrix").all("a").each do |link|
+      suites << link.text
+    end
+
+    suites
   end
 
-  def crawl(path)
+  def build_numbers()
+    visit "/job/avvo_acceptance-stag/api/json"
 
+    p page.text
+    return_array = []
+    builds = JSON(page.text).fetch("builds")
+    builds.each do |build|
+      return_array << build.fetch("number")
+    end
+
+    return_array
+  end
+
+  def crawl(path, build, suite, suite_query)
     visit path
-    body = page.text
 
     # use source here b/c it includes newlines
-    find_errors(source)
+    errors = find_errors(source)
+    unless errors.empty?
+      link = "http://jenkins.corp.avvo.com/view/Acceptance/job/avvo_acceptance-stag/#{suite_query}/#{build}/console"
+      p "#{build} - #{suite} - #{link}"
+      p errors.inspect
+    end
+
   end
 
   def find_errors(body)
+    errors = []
     found_error = false
     source.each_line do |line|
       if found_error
-        p line
+        errors << line
         found_error = false
       end
 
       found_error = process_line(line)
     end
+    errors
+  end
+
+  def print_error(line)
+    p line
   end
 
   def process_line(line)
@@ -47,11 +75,16 @@ class Crawler
 
 end
 
-acceptance_suites = ["amos/advisor", "amos/content", "amos/directory", "amos/homepage", "amos/login", "amos/seo", "amos/services", "api", "advisor", "sales", "shed", "syndication", "services" ]
-suites = acceptance_suites.map { |item| "SUITE=#{CGI::escape(item)},label_exp=phantomjs" }
+builds = Crawler.new.build_numbers
+p builds
 
-suites.each do |suite|
- Crawler.new.crawl("http://jenkins.corp.avvo.com/job/avvo_acceptance-stag/lastBuild/#{suite}/consoleText")
+acceptance_suites = Crawler.new.find_suites("avvo_acceptance-stag")
+# suites = acceptance_suites.map { |item| "#{CGI::escape(item)},label_exp=phantomjs" }
+builds.first(10).each do |build|
+  acceptance_suites.each do |suite|
+    suite_query= "#{CGI::escape(suite)},label_exp=phantomjs"
+    Crawler.new.crawl("/job/avvo_acceptance-stag/#{build}/#{suite_query}/consoleText", build, suite, suite_query )
+  end
 end
 
-# Crawler.new.find_suites("avvo_acceptance-stag")
+Crawler.new.find_suites("avvo_acceptance-stag")
